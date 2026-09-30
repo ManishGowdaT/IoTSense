@@ -1,0 +1,1131 @@
+openapi: 3.1.0
+info:
+  title: IoTSense API
+  version: 1.0.0
+  summary: Versioned facility monitoring and operations API.
+  description: >-
+    Initial contract. Authentication and health foundations are implemented; remaining
+    business APIs are planned. Device credentials determine
+    organization, washroom association and source mode. The frontend must not be treated
+    as an authorization boundary. MQ readings are relative/raw values, not ppm.
+servers:
+  - url: https://api.example.invalid
+    description: Placeholder production API origin
+  - url: http://localhost:8000
+    description: Local development API
+tags:
+  - name: Authentication
+  - name: Telemetry
+  - name: Dashboard
+  - name: Washrooms
+  - name: Sensors
+  - name: Alerts
+  - name: Cleaning
+  - name: Analytics
+  - name: Devices
+  - name: Administration
+  - name: Health
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Start a user session
+      description: Sets a secure HttpOnly same-site session cookie. Apply throttling.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Authenticated user summary
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+              description: Secure session cookie; never expose its value in JSON or logs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserSummary' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke current session
+      security: [{ userSession: [] }]
+      responses:
+        '204': { description: Session revoked }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current user and authorized scope
+      security: [{ userSession: [] }]
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserSummary' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Rotate the active user session
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CsrfToken' }]
+      responses:
+        '200':
+          description: Rotated session and user summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserSummary' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/password-reset/request:
+    post:
+      tags: [Authentication]
+      summary: Request a password reset
+      description: Always returns the same response to avoid account enumeration.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '202': { description: Request accepted whether or not the account exists }
+        '429': { $ref: '#/components/responses/Problem' }
+  /api/v1/auth/password-reset/confirm:
+    post:
+      tags: [Authentication]
+      summary: Set a new password using a one-time reset token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token: { type: string, writeOnly: true }
+                new_password: { type: string, minLength: 12, maxLength: 256, writeOnly: true }
+      responses:
+        '204': { description: Password changed and previous sessions revoked }
+        '400': { $ref: '#/components/responses/Problem' }
+  /api/v1/telemetry:
+    post:
+      tags: [Telemetry]
+      summary: Accept one device telemetry event
+      description: >-
+        The server assigns source mode from the authenticated device identity. The
+        device cannot submit organization, washroom, score, cause or alert fields.
+        Repeated (device, sequence) with identical content is idempotent; a changed
+        payload for the same sequence returns 409.
+      security: [{ deviceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TelemetryRequest' }
+      responses:
+        '202':
+          description: Accepted or accepted duplicate
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TelemetryReceipt' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /api/ingest:
+    post:
+      tags: [Telemetry]
+      summary: Compatibility alias for telemetry ingestion
+      description: >-
+        If retained during migration, this route must use the same v1 schema,
+        authentication, validation and ingestion service as /api/v1/telemetry.
+      deprecated: true
+      security: [{ deviceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TelemetryRequest' }
+      responses:
+        '202':
+          description: Accepted telemetry event
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TelemetryReceipt' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Get dashboard summary
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/FacilityId' }
+      responses:
+        '200':
+          description: Scoped dashboard summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardSummary' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/washrooms:
+    get:
+      tags: [Washrooms]
+      summary: List washrooms in the current user scope
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { $ref: '#/components/parameters/FacilityId' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/WashroomStatus' }
+      responses:
+        '200':
+          description: Washroom page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Page' }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/WashroomSummary' }
+        '401': { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [Washrooms]
+      summary: Create a washroom
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CsrfToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWashroomRequest' }
+      responses:
+        '201':
+          description: Created washroom
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WashroomSummary' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/washrooms/{washroomId}:
+    parameters:
+      - name: washroomId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Washrooms]
+      summary: Get washroom details
+      security: [{ userSession: [] }]
+      responses:
+        '200':
+          description: Washroom and current state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WashroomDetail' }
+        '404': { $ref: '#/components/responses/Problem' }
+    patch:
+      tags: [Washrooms]
+      summary: Update washroom metadata
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CsrfToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateWashroomRequest' }
+      responses:
+        '200':
+          description: Updated washroom
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WashroomSummary' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/washrooms/{washroomId}/history:
+    get:
+      tags: [Washrooms]
+      summary: Get washroom readings and score history
+      security: [{ userSession: [] }]
+      parameters:
+        - name: washroomId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+        - { $ref: '#/components/parameters/Interval' }
+        - name: source_mode
+          in: query
+          schema: { $ref: '#/components/schemas/SourceMode' }
+      responses:
+        '200':
+          description: History with missing periods preserved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HistoryResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/sensors/{sensorId}:
+    get:
+      tags: [Sensors]
+      summary: Get sensor metadata and latest observation
+      security: [{ userSession: [] }]
+      parameters:
+        - name: sensorId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Sensor detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SensorDetail' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/sensors/{sensorId}/history:
+    get:
+      tags: [Sensors]
+      summary: Get sensor time series
+      security: [{ userSession: [] }]
+      parameters:
+        - name: sensorId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+        - { $ref: '#/components/parameters/Interval' }
+      responses:
+        '200':
+          description: Sensor history; missing intervals remain gaps
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HistoryResponse' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/alerts:
+    get:
+      tags: [Alerts]
+      summary: List incidents and alerts
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - name: status
+          in: query
+          schema: { type: string, enum: [open, acknowledged, resolved] }
+      responses:
+        '200':
+          description: Scoped incident page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Page' }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Incident' }
+  /api/v1/alerts/{incidentId}/acknowledge:
+    post:
+      tags: [Alerts]
+      summary: Acknowledge an incident
+      security: [{ userSession: [] }]
+      parameters:
+        - name: incidentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentActionRequest' }
+      responses:
+        '200':
+          description: Acknowledged incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/alerts/{incidentId}/resolve:
+    post:
+      tags: [Alerts]
+      summary: Resolve an incident
+      security: [{ userSession: [] }]
+      parameters:
+        - name: incidentId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentActionRequest' }
+      responses:
+        '200':
+          description: Resolved incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/cleaning/tasks:
+    get:
+      tags: [Cleaning]
+      summary: List cleaning tasks
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - name: status
+          in: query
+          schema: { type: string, enum: [assigned, in_progress, completed, cancelled] }
+        - name: assignee_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Scoped task page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Page' }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/CleaningTask' }
+    post:
+      tags: [Cleaning]
+      summary: Create a cleaning task
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CsrfToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCleaningTaskRequest' }
+      responses:
+        '201':
+          description: Created task
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CleaningTask' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+  /api/v1/cleaning/tasks/{taskId}:
+    get:
+      tags: [Cleaning]
+      summary: Get task and event timeline
+      security: [{ userSession: [] }]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Task detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CleaningTask' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/cleaning/tasks/{taskId}/start:
+    post:
+      tags: [Cleaning]
+      summary: Start an assigned task
+      security: [{ userSession: [] }]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      responses:
+        '200':
+          description: Task started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CleaningTask' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/cleaning/tasks/{taskId}/complete:
+    post:
+      tags: [Cleaning]
+      summary: Record task completion
+      description: Human-reported completion and sensor evidence remain distinct.
+      security: [{ userSession: [] }]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteTaskRequest' }
+      responses:
+        '200':
+          description: Completed task with event record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CleaningTask' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/cleaning/tasks/{taskId}/cancel:
+    post:
+      tags: [Cleaning]
+      summary: Cancel a task with a reason
+      security: [{ userSession: [] }]
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200':
+          description: Cancelled task
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CleaningTask' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/v1/analytics:
+    get:
+      tags: [Analytics]
+      summary: Query aggregated facility analytics
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+        - { $ref: '#/components/parameters/Interval' }
+        - { $ref: '#/components/parameters/FacilityId' }
+        - name: washroom_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: source_mode
+          in: query
+          schema: { $ref: '#/components/schemas/SourceMode' }
+      responses:
+        '200':
+          description: Aggregated series with gaps and source modes retained
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HistoryResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/devices:
+    get:
+      tags: [Devices]
+      summary: List devices in authorized scope
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: Device page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Page' }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Device' }
+    post:
+      tags: [Devices]
+      summary: Provision a device
+      description: Device key is returned once; server stores only its hash.
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CsrfToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProvisionDeviceRequest' }
+      responses:
+        '201':
+          description: Device and one-time device key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProvisionedDevice' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/devices/{deviceId}:
+    get:
+      tags: [Devices]
+      summary: Get device, sensor capability and health
+      security: [{ userSession: [] }]
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Device detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Device' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/devices/{deviceId}/revoke:
+    post:
+      tags: [Devices]
+      summary: Revoke a device credential
+      security: [{ userSession: [] }]
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      responses:
+        '204': { description: Device credential revoked }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/users:
+    get:
+      tags: [Administration]
+      summary: List users in authorized scope
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: User page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Page' }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/UserSummary' }
+        '403': { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [Administration]
+      summary: Invite a user into the permitted organization scope
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CsrfToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, display_name, role]
+              properties:
+                email: { type: string, format: email }
+                display_name: { type: string, minLength: 1, maxLength: 120 }
+                role: { $ref: '#/components/schemas/Role' }
+                organization_id: { type: [string, 'null'], format: uuid }
+      responses:
+        '201':
+          description: Invitation created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserSummary' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/users/{userId}:
+    delete:
+      tags: [Administration]
+      summary: Deactivate a user and revoke their sessions
+      security: [{ userSession: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      responses:
+        '204': { description: User deactivated }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/settings:
+    get:
+      tags: [Administration]
+      summary: Read organization settings
+      security: [{ userSession: [] }]
+      responses:
+        '200':
+          description: Settings and active score ruleset version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+    patch:
+      tags: [Administration]
+      summary: Update organization settings
+      security: [{ userSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/CsrfToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettingsUpdate' }
+      responses:
+        '200':
+          description: Updated, versioned settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /api/v1/audit-logs:
+    get:
+      tags: [Administration]
+      summary: Read scoped audit history
+      security: [{ userSession: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: Audit event page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Page' }
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditEvent' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /health:
+    get:
+      tags: [Health]
+      summary: Process liveness check
+      security: []
+      responses:
+        '200':
+          description: Service process is alive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /ready:
+    get:
+      tags: [Health]
+      summary: Dependency readiness check
+      security: []
+      responses:
+        '200':
+          description: Service and required dependencies are ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    userSession:
+      type: apiKey
+      in: cookie
+      name: iotsense_session
+      description: Secure HttpOnly session cookie; browser mutations also require X-CSRF-Token.
+    deviceKey:
+      type: apiKey
+      in: header
+      name: X-Device-Key
+      description: Unique revocable per-device key; server stores only a hash.
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    FacilityId:
+      name: facility_id
+      in: query
+      schema: { type: string, format: uuid }
+    From:
+      name: from
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+    To:
+      name: to
+      in: query
+      required: true
+      schema: { type: string, format: date-time }
+    Interval:
+      name: interval
+      in: query
+      schema:
+        type: string
+        enum: [raw, 5m, 30m, 1h, 6h, 1d]
+        default: 30m
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string }
+  responses:
+    Problem:
+      description: RFC 9457-style API problem
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 256, writeOnly: true }
+    Role:
+      type: string
+      enum: [super_admin, facility_admin, maintenance_staff, viewer]
+    UserSummary:
+      type: object
+      required: [id, email, display_name, role, status]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        status: { type: string, enum: [invited, active, inactive] }
+        organization_id: { type: [string, 'null'], format: uuid }
+        facility_ids:
+          type: array
+          items: { type: string, format: uuid }
+    SourceMode:
+      type: string
+      enum: [live_hardware, simulation, sample]
+    Quality:
+      type: string
+      enum: [valid, stale, missing, invalid, warming_up, uncalibrated]
+    WashroomStatus:
+      type: string
+      enum: [clean, moderate, dirty, cleaning, offline, unknown]
+    TelemetryRequest:
+      type: object
+      required: [sequence, observed_at, firmware_version, observations]
+      additionalProperties: false
+      properties:
+        device_id: { type: string, format: uuid, description: If present, must match authenticated device. }
+        sequence: { type: integer, minimum: 0, description: Monotonically increasing device sequence for idempotency. }
+        observed_at: { type: string, format: date-time, description: Device observation time with timezone. }
+        firmware_version: { type: string, minLength: 1, maxLength: 64 }
+        observations:
+          type: array
+          maxItems: 64
+          items: { $ref: '#/components/schemas/TelemetryObservation' }
+    TelemetryObservation:
+      type: object
+      required: [sensor_key, metric, value, unit]
+      additionalProperties: false
+      properties:
+        sensor_key: { type: string, minLength: 1, maxLength: 64, examples: [bme680, mq135] }
+        metric:
+          type: string
+          enum: [temperature_c, relative_humidity_pct, pressure_pa, gas_resistance_ohm, analog_raw, pin_voltage_v, relative_index]
+        value: { type: number, description: Finite numeric observation; ppm is not supported in v1 for MQ sensors. }
+        unit: { type: string, minLength: 1, maxLength: 24 }
+        quality: { $ref: '#/components/schemas/Quality' }
+        metadata: { type: object, additionalProperties: true }
+    TelemetryReceipt:
+      type: object
+      required: [telemetry_event_id, device_id, sequence, received_at, source_mode, duplicate]
+      properties:
+        telemetry_event_id: { type: string, format: uuid }
+        device_id: { type: string, format: uuid }
+        sequence: { type: integer }
+        received_at: { type: string, format: date-time }
+        source_mode: { $ref: '#/components/schemas/SourceMode' }
+        duplicate: { type: boolean }
+    HygieneScore:
+      type: object
+      required: [value, classification, algorithm_version, calculated_at, quality, source_mode]
+      properties:
+        value: { type: [integer, 'null'], minimum: 0, maximum: 100 }
+        classification: { $ref: '#/components/schemas/WashroomStatus' }
+        algorithm_version: { type: string }
+        calculated_at: { type: string, format: date-time }
+        quality: { $ref: '#/components/schemas/Quality' }
+        source_mode: { $ref: '#/components/schemas/SourceMode' }
+        explanation:
+          type: array
+          items: { type: string }
+    WashroomSummary:
+      type: object
+      required: [id, name, facility_id, status, last_telemetry_at, active_alert_count]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        facility_id: { type: string, format: uuid }
+        facility_name: { type: string }
+        status: { $ref: '#/components/schemas/WashroomStatus' }
+        score: { oneOf: [{ $ref: '#/components/schemas/HygieneScore' }, { type: 'null' }] }
+        last_telemetry_at: { type: [string, 'null'], format: date-time }
+        active_alert_count: { type: integer, minimum: 0 }
+        device_online: { type: boolean }
+    WashroomDetail:
+      allOf:
+        - { $ref: '#/components/schemas/WashroomSummary' }
+        - type: object
+          properties:
+            location_label: { type: [string, 'null'] }
+            sensors:
+              type: array
+              items: { $ref: '#/components/schemas/SensorDetail' }
+            capability_state: { type: string, enum: [verified, partial, unverified] }
+    CreateWashroomRequest:
+      type: object
+      required: [facility_id, name]
+      additionalProperties: false
+      properties:
+        facility_id: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        location_label: { type: [string, 'null'], maxLength: 160 }
+    UpdateWashroomRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        location_label: { type: [string, 'null'], maxLength: 160 }
+        status: { type: string, enum: [active, inactive, maintenance] }
+    SensorDetail:
+      type: object
+      required: [id, sensor_key, model, status]
+      properties:
+        id: { type: string, format: uuid }
+        sensor_key: { type: string }
+        model: { type: string }
+        status: { type: string, enum: [reporting, stale, missing, invalid, unverified] }
+        latest_observation: { oneOf: [{ $ref: '#/components/schemas/TelemetryObservation' }, { type: 'null' }] }
+        latest_observed_at: { type: [string, 'null'], format: date-time }
+    DashboardSummary:
+      type: object
+      required: [generated_at, source_state, washroom_count, active_alert_count, washrooms]
+      properties:
+        generated_at: { type: string, format: date-time }
+        source_state: { type: string, enum: [live_hardware, simulation, mixed, stale, unavailable] }
+        washroom_count: { type: integer, minimum: 0 }
+        active_alert_count: { type: integer, minimum: 0 }
+        washrooms:
+          type: array
+          items: { $ref: '#/components/schemas/WashroomSummary' }
+    Page:
+      type: object
+      required: [page, page_size, has_more]
+      properties:
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 200 }
+        total: { type: integer, minimum: 0 }
+        has_more: { type: boolean }
+    SeriesPoint:
+      type: object
+      required: [observed_at, metric, unit, source_mode, quality]
+      properties:
+        observed_at: { type: string, format: date-time }
+        metric: { type: string }
+        value: { type: [number, 'null'] }
+        unit: { type: string }
+        source_mode: { $ref: '#/components/schemas/SourceMode' }
+        quality: { $ref: '#/components/schemas/Quality' }
+        sample_count: { type: [integer, 'null'], minimum: 0 }
+    HistoryResponse:
+      type: object
+      required: [from, to, interval, points]
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        interval: { type: string }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/SeriesPoint' }
+    Incident:
+      type: object
+      required: [id, washroom_id, title, severity, status, opened_at]
+      properties:
+        id: { type: string, format: uuid }
+        washroom_id: { type: string, format: uuid }
+        title: { type: string }
+        severity: { type: string, enum: [info, low, medium, high, critical] }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        opened_at: { type: string, format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+        resolved_at: { type: [string, 'null'], format: date-time }
+        source_mode: { $ref: '#/components/schemas/SourceMode' }
+        evidence_summary: { type: string }
+    IncidentActionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: string, maxLength: 1000 }
+    CleaningTask:
+      type: object
+      required: [id, washroom_id, title, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        washroom_id: { type: string, format: uuid }
+        incident_id: { type: [string, 'null'], format: uuid }
+        title: { type: string }
+        status: { type: string, enum: [assigned, in_progress, completed, cancelled] }
+        assignee_id: { type: [string, 'null'], format: uuid }
+        due_at: { type: [string, 'null'], format: date-time }
+        started_at: { type: [string, 'null'], format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/CleaningEvent' }
+    CreateCleaningTaskRequest:
+      type: object
+      required: [washroom_id, title]
+      additionalProperties: false
+      properties:
+        washroom_id: { type: string, format: uuid }
+        incident_id: { type: [string, 'null'], format: uuid }
+        title: { type: string, minLength: 1, maxLength: 160 }
+        assignee_id: { type: [string, 'null'], format: uuid }
+        due_at: { type: [string, 'null'], format: date-time }
+    CompleteTaskRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        note: { type: [string, 'null'], maxLength: 2000 }
+        evidence_reference: { type: [string, 'null'], maxLength: 500 }
+    CleaningEvent:
+      type: object
+      required: [id, event_type, actor_id, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        event_type: { type: string, enum: [created, assigned, started, completed, cancelled, note_added] }
+        actor_id: { type: [string, 'null'], format: uuid }
+        occurred_at: { type: string, format: date-time }
+        note: { type: [string, 'null'] }
+    Device:
+      type: object
+      required: [id, name, status, last_seen_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        washroom_id: { type: string, format: uuid }
+        status: { type: string, enum: [online, offline, degraded, revoked, unknown] }
+        last_seen_at: { type: [string, 'null'], format: date-time }
+        firmware_version: { type: [string, 'null'] }
+        sensor_keys: { type: array, items: { type: string } }
+    ProvisionDeviceRequest:
+      type: object
+      required: [name, washroom_id, expected_sensor_keys]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        washroom_id: { type: string, format: uuid }
+        expected_sensor_keys:
+          type: array
+          items: { type: string, enum: [bme680, mq135, mq3, other] }
+    ProvisionedDevice:
+      type: object
+      required: [device, device_key]
+      properties:
+        device: { $ref: '#/components/schemas/Device' }
+        device_key: { type: string, writeOnly: true, description: Returned once; do not log or store in browser local storage. }
+    Settings:
+      type: object
+      required: [organization_id, stale_after_seconds, active_algorithm_version, settings_version]
+      properties:
+        organization_id: { type: string, format: uuid }
+        stale_after_seconds: { type: integer, minimum: 1 }
+        active_algorithm_version: { type: string }
+        settings_version: { type: integer, minimum: 1 }
+        score_thresholds:
+          type: object
+          description: Draft configuration only; does not imply validated hygiene cutoffs.
+          additionalProperties: { type: number }
+    SettingsUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        stale_after_seconds: { type: integer, minimum: 1 }
+        score_thresholds:
+          type: object
+          additionalProperties: { type: number }
+    AuditEvent:
+      type: object
+      required: [id, action, resource_type, occurred_at, outcome]
+      properties:
+        id: { type: string, format: uuid }
+        actor_id: { type: [string, 'null'], format: uuid }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: [string, 'null'] }
+        occurred_at: { type: string, format: date-time }
+        outcome: { type: string, enum: [success, denied, failure] }
+    Health:
+      type: object
+      required: [status, checked_at]
+      properties:
+        status: { type: string, enum: [ok, degraded, unavailable] }
+        checked_at: { type: string, format: date-time }
+        request_id: { type: [string, 'null'] }
+    Problem:
+      type: object
+      required: [type, title, status, code, request_id]
+      properties:
+        type: { type: string, format: uri-reference }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        code: { type: string }
+        detail: { type: string }
+        instance: { type: string }
+        request_id: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
