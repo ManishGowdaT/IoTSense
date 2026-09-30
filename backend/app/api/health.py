@@ -20,7 +20,7 @@ def health(request: Request) -> dict[str, str]:
     }
 
 
-@router.get("/ready", include_in_schema=True)
+@router.get("/ready", include_in_schema=True, response_model=None)
 def ready(request: Request, db: Session = Depends(get_db)) -> dict[str, str] | JSONResponse:
     """Readiness check; returns no credentials or dependency internals."""
     try:

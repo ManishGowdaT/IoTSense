@@ -4,17 +4,28 @@ Smart washroom hygiene monitoring and facility operations platform.
 
 IoTSense is being created from scratch. The planned system connects ESP32 devices to a Python API and PostgreSQL database, then presents operational status and workflows in a React web app.
 
-## Project status
+## Demo MVP
 
-**Current phase:** Phase 7 — authentication, roles and audit.
+The **frontend MVP** includes sample dashboard, washroom, alert, cleaning, device and analytics flows. It can also read MQ-3 and MQ-135 sensor outputs directly from an ESP32 USB serial connection; temperature, humidity and pressure are labeled simulated BME680 values. It needs Node.js and npm; **PostgreSQL, Docker and the Python backend are not needed**.
 
-The frontend prototype, routing/configuration foundation, domain/API contract, FastAPI process scaffold, PostgreSQL models and migrations, and initial authentication/role/audit foundation are in place. Telemetry ingestion and hardware integration have not started.
+Without an ESP32 connection, dashboard values use sample data. With hardware attached, the live sensor values are displayed in the dashboard but are not stored in the backend.
+
+```powershell
+npm --prefix .\frontend install
+npm --prefix .\frontend run demo
+```
+
+Open the localhost URL printed by Vite and select **Connect ESP32** in the top banner. The browser must be Chrome or Edge and the device sketch must be uploaded first. If port 4173 is busy, Vite will select another port. See [frontend MVP instructions](frontend/README.md) for wiring and upload steps.
+
+## Development status
+
+The separate FastAPI/PostgreSQL backend includes authentication foundations, device provisioning and telemetry ingestion. This MVP uses direct USB serial for the browser walkthrough; API persistence and production device transport are separate follow-on integration work.
 
 ## Planned components
 
 - `frontend/` — React, Vite, TypeScript web application
 - `backend/` — FastAPI service, domain logic and database migrations
-- `firmware/esp32/` — device firmware and telemetry client
+- `firmware/esp32/` — ESP32 serial sketch for live MQ sensor demo
 - `docs/` — product, architecture, hardware and operations documentation
 - `infra/` — local/deployment configuration
 - `tests/` — cross-component and end-to-end test material
@@ -26,18 +37,6 @@ See [Phase 4 frontend foundation](docs/product/phase-4-frontend-foundation.md) f
 See [Phase 5 domain and API contract](docs/architecture/phase-5-domain-and-api-contract.md) and [OpenAPI](backend/openapi.yaml).
 See [Phase 6 backend foundation](docs/product/phase-6-backend-foundation.md) and [backend setup](backend/README.md).
 See [Phase 7 authentication and access control](docs/product/phase-7-auth-and-authorization.md).
-
-## Run the frontend prototype
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-## Run the backend foundation
-
-Follow the [backend setup instructions](backend/README.md) to start local PostgreSQL, apply the initial migration and run FastAPI.
 
 ## Data integrity rule
 

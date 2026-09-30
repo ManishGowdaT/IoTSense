@@ -10,7 +10,7 @@ export const routeByScreen: Record<ScreenId, string> = {
   forgot: '/forgot-password',
   dashboard: '/app/dashboard',
   washrooms: '/app/washrooms',
-  'washroom-detail': '/app/washrooms/north-wing-level-2',
+  'washroom-detail': '/app/washrooms/north-wing-washroom-1',
   sensor: '/app/sensors/mq135-sample',
   analysis: '/app/hygiene-analysis',
   causes: '/app/cause-identification',

@@ -624,6 +624,32 @@ paths:
         '204': { description: Device credential revoked }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /api/v1/devices/{deviceId}/rotate-key:
+    post:
+      tags: [Devices]
+      summary: Rotate a device credential
+      description: The replacement key is returned once; the prior key stops working immediately.
+      security: [{ userSession: [] }]
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - { $ref: '#/components/parameters/CsrfToken' }
+      responses:
+        '200':
+          description: Replacement credential
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device_id, device_key]
+                properties:
+                  device_id: { type: string, format: uuid }
+                  device_key: { type: string, writeOnly: true }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
   /api/v1/users:
     get:
       tags: [Administration]
@@ -867,8 +893,15 @@ components:
         metric:
           type: string
           enum: [temperature_c, relative_humidity_pct, pressure_pa, gas_resistance_ohm, analog_raw, pin_voltage_v, relative_index]
-        value: { type: number, description: Finite numeric observation; ppm is not supported in v1 for MQ sensors. }
-        unit: { type: string, minLength: 1, maxLength: 24 }
+        value: { type: [number, 'null'], description: Null is allowed only when quality is missing. Ppm is not supported in v1 for MQ sensors. }
+        unit:
+          type: string
+          minLength: 1
+          maxLength: 24
+          description: >-
+            Use Cel for temperature_c, % for relative_humidity_pct, Pa for pressure_pa,
+            Ohm for gas_resistance_ohm, count for analog_raw, V for pin_voltage_v,
+            and 1 for relative_index.
         quality: { $ref: '#/components/schemas/Quality' }
         metadata: { type: object, additionalProperties: true }
     TelemetryReceipt:

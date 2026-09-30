@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     password_reset_ttl_minutes: int = 30
     login_rate_limit_attempts: int = 5
     login_rate_limit_window_seconds: int = 900
+    telemetry_max_clock_skew_seconds: int = 900
+    telemetry_max_past_age_seconds: int = 86400
+    telemetry_max_payload_bytes: int = 65536
     cors_origins: list[str] = Field(default_factory=list)
     smtp_host: str | None = None
     smtp_port: int = 587

@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader runner --host 0.0.0.0",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "build": "tsc -b && vite build --configLoader runner",
+    "preview": "vite preview --configLoader runner --host 0.0.0.0",
+    "demo": "npm run build && vite preview --configLoader runner --host 0.0.0.0"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

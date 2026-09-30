@@ -1,8 +1,9 @@
 # Backend development setup
 
-Phases 6–7 create the FastAPI process, PostgreSQL connection, SQLAlchemy domain models,
-Alembic migrations, health/readiness endpoints, cookie sessions, CSRF protection and
-initial role-scoped user administration. Most business APIs remain for later phases.
+Phases 6–8 create the FastAPI process, PostgreSQL connection, SQLAlchemy domain models,
+Alembic migrations, health/readiness endpoints, cookie sessions, CSRF protection,
+initial role-scoped user administration, device provisioning and telemetry ingestion.
+Most operational APIs remain for later phases.
 
 ## Requirements
 
@@ -46,6 +47,15 @@ such as logout, refresh, invitations and user deactivation require the CSRF toke
 the `iotsense_csrf` cookie in the `X-CSRF-Token` header. `GET /api/v1/auth/me` returns
 the current user and organization scope. `POST /api/v1/users` creates an invitation;
 `DELETE /api/v1/users/{id}` deactivates that user and revokes their sessions.
+
+Administrators can provision devices at `POST /api/v1/devices`; the returned
+`device_key` is shown once. Store it in the device's protected configuration. The API
+stores only its SHA-256 digest. Rotate with `POST /api/v1/devices/{id}/rotate-key` or
+revoke with `POST /api/v1/devices/{id}/revoke`; these browser mutations require the
+CSRF header. Authenticated devices submit readings to `POST /api/v1/telemetry` with
+`X-Device-Key`. The deprecated `POST /api/ingest` path uses the same validator and
+storage path. Telemetry is tagged `live_hardware` by the server; device payloads cannot
+select a source mode. MQ measurements are stored as raw or relative values, not ppm.
 
 The compose credentials are for local development only. Replace them with managed
 secrets and a restricted database user before deploying anywhere shared or public.

@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router, users_router
+from app.api.devices import router as devices_router
 from app.api.health import router as health_router
+from app.api.telemetry import legacy_router as telemetry_legacy_router, router as telemetry_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -30,6 +32,9 @@ app = FastAPI(
 app.include_router(health_router, prefix=settings.api_prefix)
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(users_router, prefix=settings.api_prefix)
+app.include_router(devices_router, prefix=settings.api_prefix)
+app.include_router(telemetry_router)
+app.include_router(telemetry_legacy_router)
 
 if settings.cors_origins:
     app.add_middleware(
@@ -37,7 +42,7 @@ if settings.cors_origins:
         allow_origins=settings.cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID"],
+        allow_headers=["Content-Type", "X-CSRF-Token", "X-Request-ID", "X-Device-Key"],
     )
 
 
